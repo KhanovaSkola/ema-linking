@@ -1,8 +1,6 @@
 #!/usr/bin/env python3
 import argparse, sys
-import time
-import json
-import re
+import time, re, json
 from pprint import pprint
 
 from tsv_reader import TsvContentReader
@@ -14,9 +12,6 @@ from tsv_reader import TsvContentReader
 # 4. Figure out what is the best structure for the data
 #     - the smalled unit is probably course, identified by its slug
 #     - for now only link exercises and videos
-
-# As a first test case, link three physics courses (should we link all all
-# science courses together? Probably...)
 
 def read_cmd():
    """Reading command line options."""
@@ -32,7 +27,6 @@ CONTENT_TYPES = ['video', 'exercise', 'article']
 TSV_CONTENT_FILE = 'tsv_download.cs.tsv'
 
 EMA_OPTIONAL_DATA = {
-    # TODO: What about subtitles videos?
     'jazyk': '5-cs',
     'autor': 'Khan Academy',
     'dostupnost': '7-ANO', # OER
@@ -54,23 +48,23 @@ EMA_OPTIONAL_DATA = {
         'basic-geo': '2-Z',
         'algebra-basics': '2-Z',
         'trigonometry': '2-G',
-        # TODO:
         'fyzika-mechanika': '2-G',
         'fyzika-elektrina-a-magnetismus': '2-G',
+        'fyzika-vlneni-a-zvuk': '2-G',
         'fyzika-vlneni-a-zvuk': '2-G',
         'obecna-chemie': '2-G',
         'fyzikalni-chemie': '2-G',
         'organic-chemistry': '2-G',
-        'fyzika-vlneni-a-zvuk': '2-G',
+        'biology': '2-G',
         'music': '2-NU',
         'cosmology-and-astronomy': '2-NU'
     },
     'vzdelavaci_obor': {
         'math': '9-03',
         'music': '9-11',
-        # TODO: Verify this!
         'physics': '9-07',
         'chemistry': '9-08',
+        'biology': '9-09',
         'astro': '9-09', # TODO: 9-10' # Not clear whether we can have multiple types
     },
     'rocnik': {
@@ -83,6 +77,7 @@ EMA_OPTIONAL_DATA = {
         'fyzikalni-chemie': '3-SS',
         'organic-chemistry': '3-SS',
         'fyzika-vlneni-a-zvuk': '3-SS',
+        'biology': '3-SS',
     },
     'gramotnost': {
         'math': '4-MA',
@@ -90,10 +85,10 @@ EMA_OPTIONAL_DATA = {
         'astro': '4-PR',
         'physics': '4-PR',
         'chemistry': '4-PR',
+        'biology': '4-PR',
     }
 }
 
-# TODO: Add physics and chemistry
 COURSE_SUBJECT_MAP = {
     'music': 'music',
     'cosmology-and-astronomy': 'astro',
@@ -109,11 +104,19 @@ COURSE_SUBJECT_MAP = {
     'obecna-chemie': 'chemistry',
     'organic-chemistry': 'chemistry',
     'fyzikalni-chemie': 'chemistry',
+    'biology': 'biology',
 }
 
-def read_existing_links(folder):
-    """Read all existing links in JSON files in a given folder"""
-    pass
+def read_existing_links():
+    """Read all existing links in pre-existing EMA JSON files"""
+    # TODO: Iterate over all JSON file 'ka_*.json' in this dir
+    # to filter out duplicates in Math courses as well.
+    DIR = 'existing-links/'
+    with open('existing-links/ka_ks_chemie_video_reindexed.json', 'r') as f:
+        ema_links = json.loads(f.read())
+
+    existing_ids = set(v['id'] for v in ema_links)
+    return existing_ids
 
 def strip_html_stuff(string):
     strout = re.sub('<[^<]+?>', '', string)
@@ -127,19 +130,16 @@ def strip_html_stuff(string):
             '&#39;', "'")
     return strout
 
+
 def ema_print_domain_content(content, content_type, courses, fname):
     ema_content = []
-    unique_content_ids = set()
-    # TODO
-    read_existing_links('existing_json')
+    existing_ids = read_existing_links()
+    unique_content_ids = existing_ids
 
-    i = 0
     for v in content:
 
-        i+=1
-
         course = v['course']
-        # Only print content in a given list of courses
+        # Only print content from a selected list of courses
         if course not in courses:
             continue
 
@@ -147,7 +147,7 @@ def ema_print_domain_content(content, content_type, courses, fname):
 
         if v['id'] in unique_content_ids:
             if opts.debug:
-                print(f'slug v["id"] is already linked')
+                print('slug is already linked' % v['node_slug'])
             continue
         else:
             unique_content_ids.add(v['id'])
@@ -218,7 +218,7 @@ def ema_print_domain_content(content, content_type, courses, fname):
     with open(fname, 'w', encoding = 'utf-8') as f:
         f.write(json.dumps(ema_content, ensure_ascii=False, allow_nan=False, indent=4, sort_keys=True))
 
-    print(f'Number of EMA {content_type}s = {len(ema_content)}')
+    print('Number of EMA %ss = %d' % (content_type, len(ema_content)))
 
 
 if __name__ == '__main__':
@@ -232,15 +232,16 @@ if __name__ == '__main__':
         print("Available content types: ", CONTENT_TYPES)
         exit(1)
 
-    # Handle duplicities across courses
-    # The ordering here is important!
-    math_courses = ('early-math', 'arithmetic', 'basic-geo', 'trigonometry',
-            'algebra-basics', 'pre-algebra')
-    science_courses = ('obecna-chemie')
-    #science_courses = ('fyzika-elektrina-a-magnetismus')
-    #science_courses = ('fyzika-mechanika', 'fyzika-elektrina-a-magnetismus',
-    #        'fyzika-vlneni-a-zvuk', 'obecna-chemie', 'fyzikalni-chemie')
+    # TODO: Add all math courses
+    math_courses = set(['early-math', 'arithmetic', 'basic-geo', 'trigonometry',
+            'algebra-basics', 'pre-algebra'])
 
+    science_courses = set(['fyzikalni-chemie'])
+    science_courses = set(['fyzika-mechanika', 'fyzika-elektrina-a-magnetismus',
+            'fyzika-vlneni-a-zvuk', 'obecna-chemie', 'fyzikalni-chemie',
+            'organic-chemistry', 'biology'])
+
+    # TODO: Add other domains?
     domain_courses_map = {
             "math": math_courses,
             "science": science_courses
@@ -248,7 +249,7 @@ if __name__ == '__main__':
 
     tsv = TsvContentReader(TSV_CONTENT_FILE)
     content = tsv.get_content(content_type, domain)
-    out_fname = f'ka_{domain}_{content_type}.json'
+    out_fname = 'ka_%s_%s.json' % (domain, content_type)
 
     courses = domain_courses_map[domain]
 
