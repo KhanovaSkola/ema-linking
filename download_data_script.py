@@ -14,7 +14,7 @@ args = parser.parse_args()
 
 LOCALE = args.locale
 BUCKET_NAME = "public-content-export-data"
-DOWNLOAD_TARGET_FILE = "tmp/tsv_download.%s.tsv" % LOCALE
+DOWNLOAD_TARGET_FILE = "tsv_download.%s.tsv" % LOCALE
 
 def get_blobs_with_prefix(bucket_name, prefix):
     """Lists all the blobs in the bucket that begin with the prefix.
