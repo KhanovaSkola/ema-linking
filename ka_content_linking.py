@@ -2,6 +2,7 @@
 import argparse, sys
 import time, re, json
 from pprint import pprint
+import glob
 
 from tsv_reader import TsvContentReader
 
@@ -23,7 +24,7 @@ def read_cmd():
    return parser.parse_args()
 
 # Currently, article type does not seem to work.
-CONTENT_TYPES = ['video', 'exercise', 'article']
+CONTENT_KINDS = ['video', 'exercise', 'article', 'topic']
 TSV_CONTENT_FILE = 'tsv_download.cs.tsv'
 
 EMA_OPTIONAL_DATA = {
@@ -33,7 +34,8 @@ EMA_OPTIONAL_DATA = {
     'typ': {
         'video': '8-VI',
         'exercise': '8-IC',
-        'article': '8-CL'
+        'article': '8-CL',
+        'topic': '8-OK',
     },
     'licence': {
         'cc-by-nc-nd': '1-CCBYNCND30',
@@ -48,6 +50,14 @@ EMA_OPTIONAL_DATA = {
         'basic-geo': '2-Z',
         'algebra-basics': '2-Z',
         'trigonometry': '2-G',
+        'vyrazy': '2-G',
+        'funkce': '2-G',
+        'analyticka-geometrie': '2-G',
+        'komplexni-cisla': '2-G',
+        'differential-calculus': '2-G',
+        'integralni-pocet': '2-G',
+        'pravdepodobnost-a-kombinatorika': '2-G',
+        'posloupnosti-a-rady': '2-G',
         'fyzika-mechanika': '2-G',
         'fyzika-elektrina-a-magnetismus': '2-G',
         'fyzika-vlneni-a-zvuk': '2-G',
@@ -57,7 +67,10 @@ EMA_OPTIONAL_DATA = {
         'organic-chemistry': '2-G',
         'biology': '2-G',
         'music': '2-NU',
-        'cosmology-and-astronomy': '2-NU'
+        'cosmology-and-astronomy': '2-NU',
+        'informatika-pocitace-a-internet': '2-NU',
+        'computer-programming': '2-NU',
+        'code-org': '2-Z',
     },
     'vzdelavaci_obor': {
         'math': '9-03',
@@ -65,11 +78,18 @@ EMA_OPTIONAL_DATA = {
         'physics': '9-07',
         'chemistry': '9-08',
         'biology': '9-09',
+        'computing': '9-19',
         'astro': '9-09', # TODO: 9-10' # Not clear whether we can have multiple types
     },
     'rocnik': {
         'early-math': '3-Z13',
         'trigonometry': '3-SS',
+        'analyticka-geometrie': '3-SS',
+        'komplexni-cisla': '3-SS',
+        'differential-calculus': '3-SS',
+        'integralni-pocet': '3-SS',
+        'pravdepodobnost-a-kombinatorika': '3-SS',
+        'posloupnosti-a-rady': '3-SS',
         'fyzika-mechanika': '3-SS',
         'fyzika-elektrina-a-magnetismus': '3-SS',
         'fyzika-vlneni-a-zvuk': '3-SS',
@@ -78,6 +98,8 @@ EMA_OPTIONAL_DATA = {
         'organic-chemistry': '3-SS',
         'fyzika-vlneni-a-zvuk': '3-SS',
         'biology': '3-SS',
+        'informatika-pocitace-a-internet': '3-SS',
+        'computer-programming': '3-NU',
     },
     'gramotnost': {
         'math': '4-MA',
@@ -86,6 +108,7 @@ EMA_OPTIONAL_DATA = {
         'physics': '4-PR',
         'chemistry': '4-PR',
         'biology': '4-PR',
+        'computing': '4-DI',
     }
 }
 
@@ -98,6 +121,15 @@ COURSE_SUBJECT_MAP = {
     'algebra-basics': 'math',
     'pre-algebra': 'math',
     'trigonometry': 'math',
+    'vyrazy': 'math',
+    'funkce': 'math',
+    'komplexni-cisla': 'math',
+    'analyticka-geometrie': 'math',
+    'differential-calculus': 'math',
+    'integralni-pocet': 'math',
+    'pravdepodobnost-a-kombinatorika': 'math',
+    'posloupnosti-a-rady': 'math',
+    'pravdepodobnost-a-kombinatorika': 'math',
     'fyzika-mechanika': 'physics',
     'fyzika-elektrina-a-magnetismus': 'physics',
     'fyzika-vlneni-a-zvuk': 'physics',
@@ -105,17 +137,33 @@ COURSE_SUBJECT_MAP = {
     'organic-chemistry': 'chemistry',
     'fyzikalni-chemie': 'chemistry',
     'biology': 'biology',
+    'informatika-pocitace-a-internet': 'computing',
+    'computer-programming': 'computing',
+    'code-org': 'computing',
 }
+
+# Filter out programming Units/Lessons that we do not want
+EXCLUDED_PROGRAMING_TOPICS = (
+    'browse', 'projectfeedback',
+    'pjs-documentation', 'webpage-documentation', 'sql-documentation',
+    'coloring', 'becoming-a-community-coder', 'resizing-with-variables',
+    'side-scroller', 'programming-3d-shapes', 'advanced-development-tools',
+)
 
 def read_existing_links():
     """Read all existing links in pre-existing EMA JSON files"""
-    # TODO: Iterate over all JSON file 'ka_*.json' in this dir
-    # to filter out duplicates in Math courses as well.
-    DIR = 'existing-links/'
-    with open('existing-links/ka_ks_chemie_video_reindexed.json', 'r') as f:
-        ema_links = json.loads(f.read())
+    files = [f for f in glob.glob("existing-links/ka_*.json") ]
+    if len(files) == 0:
+        print("ERROR: Did not find existing json files")
+        sys.exit(1)
 
-    existing_ids = set(v['id'] for v in ema_links)
+    existing_ids = set()
+    for fpath in files:
+        with open(fpath, "r") as f:
+            ema_links = json.loads(f.read())
+        existing_ids.update(item['id'] for item in ema_links)
+
+    print("Number of existing items = %d" % len(existing_ids))
     return existing_ids
 
 def strip_html_stuff(string):
@@ -130,8 +178,9 @@ def strip_html_stuff(string):
             '&#39;', "'")
     return strout
 
-
-def ema_print_domain_content(content, content_type, courses, fname):
+def ema_print_domain_content(content, content_kind, courses, fname):
+    """Export content within a given domain, passed in 'content' parameter,
+    Only export content that is within whitelisted courses"""
     ema_content = []
     existing_ids = read_existing_links()
     unique_content_ids = existing_ids
@@ -145,9 +194,18 @@ def ema_print_domain_content(content, content_type, courses, fname):
 
         subject = COURSE_SUBJECT_MAP[course]
 
+        # Suuper ugly hack, this content is both in math and science domain
+        # We already link it in physics course so we need to skip it in math.
+        if v['node_slug'] in (
+                'v/introduction-to-vectors-and-scalars', 'a/scientific-notation-review'
+                ) and v['domain'] == 'math':
+            unique_content_ids.add(v['id'])
+
+        if v['node_slug'] in EXCLUDED_PROGRAMING_TOPICS:
+            unique_content_ids.add(v['id'])
+            continue
+
         if v['id'] in unique_content_ids:
-            if opts.debug:
-                print('slug is already linked' % v['node_slug'])
             continue
         else:
             unique_content_ids.add(v['id'])
@@ -178,15 +236,10 @@ def ema_print_domain_content(content, content_type, courses, fname):
             'jazyk': EMA_OPTIONAL_DATA['jazyk'],
             'dostupnost': EMA_OPTIONAL_DATA['dostupnost'],
             # Optional fields
-            'typ': EMA_OPTIONAL_DATA['typ'][content_type],
+            'typ': EMA_OPTIONAL_DATA['typ'][content_kind],
             'stupen_vzdelavani': EMA_OPTIONAL_DATA['stupen_vzdelavani'][course],
             'vzdelavaci_obor': EMA_OPTIONAL_DATA['vzdelavaci_obor'][subject],
             'gramotnost': EMA_OPTIONAL_DATA['gramotnost'][subject],
-            # TODO: Creation date might not make sense...
-#            'datum_vzniku': v['creation_date']
-            # KA API gives keywords in EN, commenting out for now....
-#            'klicova_slova': v['keywords'],
-#            'otevreny_zdroj': '7-ANO',
           }
 
           # Do not export empty fieds...
@@ -218,40 +271,56 @@ def ema_print_domain_content(content, content_type, courses, fname):
     with open(fname, 'w', encoding = 'utf-8') as f:
         f.write(json.dumps(ema_content, ensure_ascii=False, allow_nan=False, indent=4, sort_keys=True))
 
-    print('Number of EMA %ss = %d' % (content_type, len(ema_content)))
+    print('Number of exported EMA %ss = %d' % (content_kind, len(ema_content)))
 
 
 if __name__ == '__main__':
 
     opts = read_cmd()
     domain = opts.domain
-    content_type = opts.content.lower()
+    content_kind = opts.content.lower()
 
-    if content_type not in CONTENT_TYPES:
+    if content_kind not in CONTENT_KINDS:
         print("ERROR: invalid content types: ", opts.content)
-        print("Available content types: ", CONTENT_TYPES)
+        print("Available content types: ", CONTENT_KINDS)
         exit(1)
 
-    # TODO: Add all math courses
-    math_courses = set(['early-math', 'arithmetic', 'basic-geo', 'trigonometry',
-            'algebra-basics', 'pre-algebra'])
+    math_courses = set([
+        'early-math', 'arithmetic', 'basic-geo', 
+        'trigonometry', 'algebra-basics', 'pre-algebra',
+        'vyrazy', 'funkce', 'analyticka-geometrie', 'komplexni-cisla',
+        'differential-calculus', 'integralni-pocet',
+        'posloupnosti-a-rady', 'pravdepodobnost-a-kombinatorika'
+    ])
 
-    science_courses = set(['fyzikalni-chemie'])
-    science_courses = set(['fyzika-mechanika', 'fyzika-elektrina-a-magnetismus',
+    science_courses = set([
+            'fyzika-mechanika', 'fyzika-elektrina-a-magnetismus',
             'fyzika-vlneni-a-zvuk', 'obecna-chemie', 'fyzikalni-chemie',
-            'organic-chemistry', 'biology'])
+            'organic-chemistry', 'biology'
+    ])
 
-    # TODO: Add other domains?
+    computing_courses = set(['informatika-pocitace-a-internet', 'code-org'])
+
+    # For programming courses, we link and the lesson/course level,
+    # not individual content items
+    if content_kind == 'topic':
+        computing_courses = set(['computer-programming'])
+
     domain_courses_map = {
             "math": math_courses,
-            "science": science_courses
-            }
+            "science": science_courses,
+            "computing": computing_courses
+    }
 
     tsv = TsvContentReader(TSV_CONTENT_FILE)
-    content = tsv.get_content(content_type, domain)
-    out_fname = 'ka_%s_%s.json' % (domain, content_type)
+    if content_kind == "topic":
+        content = []
+        for topic_kind in ("course", "unit", "lesson"):
+            content += tsv.get_content(topic_kind, domain)
+    else:
+        content = tsv.get_content(content_kind, domain)
 
+    out_fname = 'ka_%s_%s.json' % (domain, content_kind)
     courses = domain_courses_map[domain]
 
-    ema_print_domain_content(content, content_type, courses, out_fname)
-
+    ema_print_domain_content(content, content_kind, courses, out_fname)

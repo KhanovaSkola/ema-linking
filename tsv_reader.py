@@ -21,7 +21,7 @@ class TsvContentReader():
     }
 
     # Other kinds are ignored / not supported
-    KINDS = ("video", "exercise", "article")
+    KINDS = ("video", "exercise", "article", "course", "unit", "lesson")
 
     def __init__(self, tsv_fname):
         self.content = self.read_tsv_content(tsv_fname)
